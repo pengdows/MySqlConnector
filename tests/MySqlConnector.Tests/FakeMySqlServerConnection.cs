@@ -98,6 +98,20 @@ internal sealed class FakeMySqlServerConnection
 							{
 								await SendAsync(stream, 1, WriteOk);
 							}
+							else if (query == "SELECT @@version_comment;")
+							{
+								m_server.VersionCommentQueried();
+								var comment = Encoding.UTF8.GetBytes(m_server.VersionComment);
+								var data = new byte[comment.Length + 1];
+								data[0] = (byte) comment.Length;
+								comment.CopyTo(data, 1);
+
+								await SendAsync(stream, 1, x => x.Write((byte) 1)); // one column
+								await SendAsync(stream, 2, x => x.Write(new byte[] { 3, 0x64, 0x65, 0x66, 0, 0, 0, 1, 0x5F, 0, 0x0c, 0x21, 0, 0, 1, 0, 0, 0xFD, 0, 0, 0x1F, 0, 0 })); // column definition (varchar)
+								await SendAsync(stream, 3, x => x.Write(new byte[] { 0xFE, 0, 0, 2, 0 })); // EOF
+								await SendAsync(stream, 4, x => x.Write(data));
+								await SendAsync(stream, 5, x => x.Write(new byte[] { 0xFE, 0, 0, 2, 0 })); // EOF
+							}
 							else if ((match = Regex.Match(query, @"^SELECT ([0-9])(;|$)")).Success)
 							{
 								var number = match.Groups[1].Value;

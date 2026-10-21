@@ -42,4 +42,17 @@ public class ServerVersionTests
 		Assert.Equal(expected, serverVersion.Version);
 		Assert.Equal(expectedMariaDb, serverVersion.IsMariaDb);
 	}
+
+	[Theory]
+	[InlineData("5.7.25-TiDB-v6.1.7", "6.1.7")]
+	[InlineData("8.0.11-TiDB-v7.5.7", "7.5.7")]
+	[InlineData("8.0.11-TiDB-v8.5.0-serverless", "8.5.0")]
+	[InlineData("8.0.13", null)]
+	[InlineData("5.7.32", null)]
+	[InlineData("5.5.5-10.2.13-MariaDB", null)]
+	public void ParseTiDbVersion(string input, string expectedTiDbVersion)
+	{
+		var serverVersion = new ServerVersion(Encoding.UTF8.GetBytes(input));
+		Assert.Equal(expectedTiDbVersion is null ? null : Version.Parse(expectedTiDbVersion), serverVersion.TiDbVersion);
+	}
 }

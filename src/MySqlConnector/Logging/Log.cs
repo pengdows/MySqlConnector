@@ -195,6 +195,12 @@ internal static partial class Log
 	[LoggerMessage(EventIds.FailedToGetConnectionId, LogLevel.Information, "Session {SessionId} failed to get CONNECTION_ID(), VERSION()")]
 	public static partial void FailedToGetConnectionId(ILogger logger, Exception exception, string sessionId);
 
+	[LoggerMessage(EventIds.DetectedSavepointSupport, LogLevel.Debug, "Session {SessionId} found @@version_comment '{VersionComment}'; supports savepoints: {SupportsSavepoints}")]
+	public static partial void DetectedSavepointSupport(ILogger logger, string sessionId, string? versionComment, bool supportsSavepoints);
+
+	[LoggerMessage(EventIds.FailedToGetVersionComment, LogLevel.Information, "Session {SessionId} failed to get @@version_comment")]
+	public static partial void FailedToGetVersionComment(ILogger logger, Exception exception, string sessionId);
+
 	[LoggerMessage(EventIds.ClosingStreamSocket, LogLevel.Debug, "Session {SessionId} closing stream/socket")]
 	public static partial void ClosingStreamSocket(ILogger logger, string sessionId);
 

@@ -155,6 +155,8 @@ public sealed class MySqlTransaction : DbTransaction
 
 		ArgumentNullException.ThrowIfNull(savepointName);
 		ArgumentException.ThrowIfNullOrEmpty(savepointName);
+		if (!SupportsSavepoints)
+			throw new NotSupportedException("The server does not support savepoints.");
 
 		using var cmd = new MySqlCommand(command + "savepoint " + QuoteIdentifier(savepointName), Connection, this) { NoActivity = true };
 		await cmd.ExecuteNonQueryAsync(ioBehavior, cancellationToken).ConfigureAwait(false);
@@ -175,6 +177,18 @@ public sealed class MySqlTransaction : DbTransaction
 	/// or any other overload that specifies an <see cref="IsolationLevel"/>.
 	/// </summary>
 	public override IsolationLevel IsolationLevel { get; }
+
+	/// <summary>
+	/// Gets a value that indicates whether this transaction supports savepoints. It is <c>false</c> for TiDB before 6.2 and for
+	/// SingleStore, which accepts <c>SAVEPOINT</c> but can't roll back to one; SingleStore is detected on pooled connections only.
+	/// When it is <c>false</c>, <see cref="Save"/>, <see cref="Rollback(string)"/>, <see cref="Release"/> and their asynchronous
+	/// versions throw <see cref="NotSupportedException"/>.
+	/// </summary>
+#if NET5_0_OR_GREATER
+	public override bool SupportsSavepoints { get; }
+#else
+	public bool SupportsSavepoints { get; }
+#endif
 
 	/// <summary>
 	/// Releases any resources associated with this transaction. If it was not committed, it will be rolled back.
@@ -252,6 +266,7 @@ public sealed class MySqlTransaction : DbTransaction
 	{
 		Connection = connection;
 		IsolationLevel = isolationLevel;
+		SupportsSavepoints = connection.Session.SupportsSavepoints;
 		m_logger = logger;
 
 		Log.StartedTransaction(m_logger, Connection.Session.Id);

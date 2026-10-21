@@ -221,6 +221,7 @@ internal sealed class ConnectionPool : IConnectionPoolMetadata, IDisposable
 		Log.ClearingConnectionPool(m_logger, Id);
 		_ = Interlocked.Increment(ref m_generation);
 		m_procedureCache = null;
+		Volatile.Write(ref m_supportsSavepoints, 0);
 		await RecoverLeakedSessionsAsync(ioBehavior).ConfigureAwait(false);
 		await CleanPoolAsync(ioBehavior, session => session.PoolGeneration != m_generation, false, cancellationToken).ConfigureAwait(false);
 	}
@@ -230,6 +231,16 @@ internal sealed class ConnectionPool : IConnectionPoolMetadata, IDisposable
 		Log.ReapingConnectionPool(m_logger, Id);
 		await RecoverLeakedSessionsAsync(ioBehavior).ConfigureAwait(false);
 		await CleanPoolAsync(ioBehavior, session => Utility.GetElapsedMilliseconds(session.LastReturnedTimestamp) / 1000 >= ConnectionSettings.ConnectionIdleTimeout, true, cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Whether the server supports savepoints, once a session of this pool has found out; <c>null</c> until then.
+	/// Finding out takes a roundtrip, so it is done once per pool, and again after <see cref="ClearAsync"/>.
+	/// </summary>
+	public bool? SupportsSavepoints
+	{
+		get => Volatile.Read(ref m_supportsSavepoints) switch { 1 => true, -1 => false, _ => null };
+		set => Volatile.Write(ref m_supportsSavepoints, value switch { true => 1, false => -1, null => 0 });
 	}
 
 	/// <summary>
@@ -779,6 +790,7 @@ internal sealed class ConnectionPool : IConnectionPoolMetadata, IDisposable
 	private uint m_lastRecoveryTime;
 	private int m_lastSessionId;
 	private Dictionary<string, CachedProcedure?>? m_procedureCache;
+	private int m_supportsSavepoints;
 #if NET6_0_OR_GREATER
 	private PeriodicTimer? m_dnsCheckTimer;
 	private PeriodicTimer? m_reaperTimer;

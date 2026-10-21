@@ -68,6 +68,11 @@ public sealed class FakeMySqlServer
 
 	public string ServerVersion { get; set; } = "5.7.10-test";
 
+	public string VersionComment { get; set; } = "MySQL Community Server - GPL";
+
+	// The number of times a client has asked for @@version_comment.
+	public int VersionCommentQueries => m_versionCommentQueries;
+
 	public bool SuppressAuthPluginNameTerminatingNull { get; set; }
 	public bool SendIncompletePostHandshakeResponse { get; set; }
 	public TimeSpan? ConnectDelay { get; set; }
@@ -96,6 +101,8 @@ public sealed class FakeMySqlServer
 
 	internal void ClientDisconnected() => Interlocked.Decrement(ref m_activeConnections);
 
+	internal void VersionCommentQueried() => Interlocked.Increment(ref m_versionCommentQueries);
+
 	internal void SetClearPasswordResponse(byte[] response) => m_clearPasswordResponse.TrySetResult(response);
 
 	internal void SetServerException(Exception exception) => m_clearPasswordResponse.TrySetException(exception);
@@ -122,4 +129,5 @@ public sealed class FakeMySqlServer
 	private readonly TaskCompletionSource<byte[]> m_clearPasswordResponse;
 	private CancellationTokenSource m_cts;
 	private int m_activeConnections;
+	private int m_versionCommentQueries;
 }

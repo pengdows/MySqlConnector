@@ -20,6 +20,23 @@ internal sealed class ServerVersion
 			IsMariaDb = true;
 		}
 
+		Version = ParseVersion(versionString);
+
+		// TiDB reports the MySQL version it is compatible with, then its own: 8.0.11-TiDB-v7.5.7
+		var tiDbIndex = versionString.IndexOf("-TiDB-v"u8);
+		if (tiDbIndex != -1)
+			TiDbVersion = ParseVersion(versionString[(tiDbIndex + 7)..]);
+	}
+
+	public string OriginalString { get; }
+	public Version Version { get; }
+	public bool IsMariaDb { get; }
+	public Version? TiDbVersion { get; }
+
+	public static ServerVersion Empty { get; } = new();
+
+	private static Version ParseVersion(ReadOnlySpan<byte> versionString)
+	{
 		var minor = 0;
 		var build = 0;
 		if (Utf8Parser.TryParse(versionString, out int major, out var bytesConsumed))
@@ -34,23 +51,14 @@ internal sealed class ServerVersion
 					if (versionString is [0x2E, ..])
 					{
 						versionString = versionString[1..];
-						if (Utf8Parser.TryParse(versionString, out build, out bytesConsumed))
-						{
-							versionString = versionString[bytesConsumed..];
-						}
+						_ = Utf8Parser.TryParse(versionString, out build, out _);
 					}
 				}
 			}
 		}
 
-		Version = new Version(major, minor, build);
+		return new Version(major, minor, build);
 	}
-
-	public string OriginalString { get; }
-	public Version Version { get; }
-	public bool IsMariaDb { get; }
-
-	public static ServerVersion Empty { get; } = new();
 
 	private ServerVersion()
 	{

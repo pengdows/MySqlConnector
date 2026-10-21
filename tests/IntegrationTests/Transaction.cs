@@ -270,6 +270,13 @@ public class Transaction : IClassFixture<TransactionFixture>
 
 #if !MYSQL_DATA
 	[Fact]
+	public void SupportsSavepoints()
+	{
+		using var transaction = m_connection.BeginTransaction();
+		Assert.True(transaction.SupportsSavepoints);
+	}
+
+	[Fact]
 	public void SavepointNullName()
 	{
 		using var transaction = m_connection.BeginTransaction();

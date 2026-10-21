@@ -19,4 +19,7 @@ internal static class ServerVersions
 
 	// https://mariadb.com/kb/en/set-statement/
 	public static readonly Version MariaDbSupportsPerQueryVariables = new(10, 1, 2);
+
+	// https://docs.pingcap.com/tidb/stable/sql-statement-savepoint/
+	public static readonly Version TiDbSupportsSavepoints = new(6, 2, 0);
 }

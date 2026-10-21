@@ -64,6 +64,7 @@ internal sealed partial class ServerSession : IServerCapabilities
 	public bool SupportsCachedPreparedMetadata { get; private set; }
 	public bool SupportsQueryAttributes { get; private set; }
 	public bool SupportsSessionTrack { get; private set; }
+	public bool SupportsSavepoints { get; private set; }
 	public bool ProcAccessDenied { get; set; }
 	public ICollection<KeyValuePair<string, object?>> ActivityTags => m_activityTags;
 	public MySqlDataReader DataReader { get; set; }
@@ -631,6 +632,8 @@ internal sealed partial class ServerSession : IServerCapabilities
 				Log.ChangingConnectionId(m_logger, Id, ConnectionId, newConnectionId, ServerVersion.OriginalString, ServerVersion.OriginalString);
 				ConnectionId = newConnectionId;
 			}
+
+			SupportsSavepoints = await GetSupportsSavepointsAsync(ioBehavior, cancellationToken).ConfigureAwait(false);
 
 			m_payloadHandler.ByteHandler.RemainingTimeout = Constants.InfiniteTimeout;
 			return redirectionUrl;
@@ -1953,6 +1956,69 @@ internal sealed partial class ServerSession : IServerCapabilities
 		}
 	}
 
+	// Every MySQL and MariaDB version supports savepoints, and TiDB does from 6.2. SingleStore reports a MySQL version and
+	// accepts SAVEPOINT, but then can't roll back to one; only @@version_comment tells it apart. Asking takes a roundtrip,
+	// so it's done once per pool; an unpooled connection doesn't ask.
+	private async Task<bool> GetSupportsSavepointsAsync(IOBehavior ioBehavior, CancellationToken cancellationToken)
+	{
+		if (ServerVersion.IsMariaDb)
+			return true;
+		if (ServerVersion.TiDbVersion is { } tiDbVersion)
+			return tiDbVersion >= ServerVersions.TiDbSupportsSavepoints;
+		if (Pool is null)
+			return true;
+		if (Pool.SupportsSavepoints is { } poolSupportsSavepoints)
+			return poolSupportsSavepoints;
+
+		var versionComment = await GetVersionCommentAsync(ioBehavior, cancellationToken).ConfigureAwait(false);
+		var supportsSavepoints = versionComment?.StartsWith("SingleStore", StringComparison.OrdinalIgnoreCase) is not true;
+		Log.DetectedSavepointSupport(m_logger, Id, versionComment, supportsSavepoints);
+		Pool.SupportsSavepoints = supportsSavepoints;
+		return supportsSavepoints;
+	}
+
+	private async Task<string?> GetVersionCommentAsync(IOBehavior ioBehavior, CancellationToken cancellationToken)
+	{
+		try
+		{
+			var payload = SupportsQueryAttributes ? s_selectVersionCommentWithAttributesPayload : s_selectVersionCommentNoAttributesPayload;
+			await SendAsync(payload, ioBehavior, cancellationToken).ConfigureAwait(false);
+
+			// column count: 1
+			_ = await ReceiveReplyAsync(ioBehavior, cancellationToken).ConfigureAwait(false);
+
+			// @@version_comment column
+			_ = await ReceiveReplyAsync(ioBehavior, CancellationToken.None).ConfigureAwait(false);
+
+			if (!SupportsDeprecateEof)
+			{
+				payload = await ReceiveReplyAsync(ioBehavior, CancellationToken.None).ConfigureAwait(false);
+				_ = EofPayload.Create(payload.Span);
+			}
+
+			// first (and only) row
+			payload = await ReceiveReplyAsync(ioBehavior, CancellationToken.None).ConfigureAwait(false);
+
+			var reader = new ByteArrayReader(payload.Span);
+			var length = reader.ReadLengthEncodedIntegerOrNull();
+			var versionComment = length != -1 ? Encoding.UTF8.GetString(reader.ReadByteString(length)) : null;
+
+			// OK/EOF payload
+			payload = await ReceiveReplyAsync(ioBehavior, CancellationToken.None).ConfigureAwait(false);
+			if (OkPayload.IsOk(payload.Span, this))
+				OkPayload.Verify(payload.Span, this);
+			else
+				EofPayload.Create(payload.Span);
+
+			return versionComment;
+		}
+		catch (MySqlException ex)
+		{
+			Log.FailedToGetVersionComment(m_logger, ex, Id);
+			return null;
+		}
+	}
+
 	private void ShutdownSocket()
 	{
 		Log.ClosingStreamSocket(m_logger, Id);
@@ -2196,6 +2262,8 @@ internal sealed partial class ServerSession : IServerCapabilities
 	private static readonly PayloadData s_sleepWithAttributesPayload = QueryPayload.Create(true, "SELECT SLEEP(0) INTO @__MySqlConnector__Sleep;"u8);
 	private static readonly PayloadData s_selectConnectionIdVersionNoAttributesPayload = QueryPayload.Create(false, "SELECT CONNECTION_ID(), VERSION();"u8);
 	private static readonly PayloadData s_selectConnectionIdVersionWithAttributesPayload = QueryPayload.Create(true, "SELECT CONNECTION_ID(), VERSION();"u8);
+	private static readonly PayloadData s_selectVersionCommentNoAttributesPayload = QueryPayload.Create(false, "SELECT @@version_comment;"u8);
+	private static readonly PayloadData s_selectVersionCommentWithAttributesPayload = QueryPayload.Create(true, "SELECT @@version_comment;"u8);
 
 	private readonly ILogger m_logger;
 #if NET9_0_OR_GREATER
